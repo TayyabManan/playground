@@ -36,6 +36,7 @@ export class ExecutionEngine {
   private backwardSteps: StepInfo[] = [];
   private currentStepIndex: number = -1;
   private mode: ExecutionMode = 'idle';
+  private pendingGradients: Map<string, number> = new Map(); // Accumulate gradients
 
   constructor(graph: ComputationGraph) {
     this.graph = graph;
@@ -48,6 +49,7 @@ export class ExecutionEngine {
   reset(): void {
     this.currentStepIndex = -1;
     this.mode = 'idle';
+    this.pendingGradients.clear();
     this.graph.reset();
     this.generateSteps();
   }
@@ -56,34 +58,24 @@ export class ExecutionEngine {
    * Generate all forward and backward steps
    */
   private generateSteps(): void {
-    // Generate forward steps
+    // Generate forward steps (without computing values)
     this.forwardSteps = [];
-    const computationSteps = this.graph.getForwardSteps();
 
-    for (const step of computationSteps) {
+    for (const node of this.graph.executionOrder) {
       // Get input node IDs
-      const inputNodeIds = step.inputs.map(inp => {
-        // Find node by name
-        for (const [id, node] of this.graph.nodes) {
-          if (node.name === inp.name) return id;
-        }
-        return '';
-      }).filter(id => id !== '');
+      const inputNodeIds = node.inputs.map(inp => inp.id);
 
       // Get edge IDs (from inputs to this node)
-      const edgeIds = inputNodeIds.map(inputId => `${inputId}-${step.nodeId}`);
+      const edgeIds = inputNodeIds.map(inputId => `${inputId}-${node.id}`);
 
       this.forwardSteps.push({
         mode: 'forward',
-        nodeId: step.nodeId,
-        nodeName: this.graph.nodes.get(step.nodeId)?.name || step.nodeId,
-        equation: step.equation,
-        explanation: step.explanation,
-        values: {
-          output: step.output,
-          ...Object.fromEntries(step.inputs.map(inp => [inp.name, inp.value])),
-        },
-        activeNodeIds: [...inputNodeIds, step.nodeId],
+        nodeId: node.id,
+        nodeName: node.name,
+        equation: '', // Will be filled in when step is executed
+        explanation: node.getExplanation(),
+        values: {}, // Will be filled in when step is executed
+        activeNodeIds: [...inputNodeIds, node.id],
         activeEdgeIds: edgeIds,
       });
     }
@@ -100,12 +92,9 @@ export class ExecutionEngine {
         mode: 'backward',
         nodeId: node.id,
         nodeName: node.name,
-        equation: node.getBackwardEquation(),
+        equation: '', // Will be filled in when step is executed
         explanation: `Computing gradients: ${node.getExplanation()}`,
-        values: {
-          gradient: node.gradient,
-          value: node.value,
-        },
+        values: {}, // Will be filled in when step is executed
         activeNodeIds: [node.id, ...inputNodeIds],
         activeEdgeIds: edgeIds,
       });
@@ -151,17 +140,47 @@ export class ExecutionEngine {
       if (node) {
         node.forward();
         node.isActive = true;
+
+        // Update the step with the computed equation and values
+        this.forwardSteps[this.currentStepIndex].equation = node.getForwardEquation();
+        this.forwardSteps[this.currentStepIndex].values = {
+          output: node.value,
+          ...Object.fromEntries(node.inputs.map(inp => [inp.name, inp.value])),
+        };
       }
     } else {
       // Backward step
       const backwardIndex = this.currentStepIndex - this.forwardSteps.length;
-      if (backwardIndex === 0) {
-        // First backward step - initialize with gradient 1.0
-        this.graph.backward();
-      }
       const node = this.graph.nodes.get(currentStep.nodeId);
+
       if (node) {
+        // First backward step - initialize output gradient to 1.0
+        if (backwardIndex === 0) {
+          this.pendingGradients.clear();
+          this.pendingGradients.set(node.id, 1.0);
+        }
+
+        // Get accumulated gradient for this node
+        const upstreamGradient = this.pendingGradients.get(node.id) || 0;
+
+        // Compute gradients for inputs using backwardLocal
+        const inputGradients = node.backwardLocal(upstreamGradient);
+
+        // Accumulate gradients for input nodes
+        for (const [inputId, grad] of Object.entries(inputGradients)) {
+          const currentGrad = this.pendingGradients.get(inputId) || 0;
+          this.pendingGradients.set(inputId, currentGrad + grad);
+        }
+
         node.isActive = true;
+
+        // Update the step with the computed equation and values
+        this.backwardSteps[backwardIndex].equation = node.getBackwardEquation();
+        this.backwardSteps[backwardIndex].values = {
+          gradient: node.gradient,
+          value: node.value,
+          ...Object.fromEntries(node.inputs.map(inp => [`grad_${inp.name}`, this.pendingGradients.get(inp.id) || 0])),
+        };
       }
     }
 

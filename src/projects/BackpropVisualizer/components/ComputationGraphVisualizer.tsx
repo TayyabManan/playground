@@ -17,6 +17,8 @@ interface VisNode {
   type: string;
   value: number;
   gradient: number;
+  gradientComputed: boolean;
+  valueComputed: boolean;
   x: number;
   y: number;
   isActive: boolean;
@@ -66,6 +68,8 @@ export default function ComputationGraphVisualizer({
         type: node.type,
         value: node.value,
         gradient: node.gradient,
+        gradientComputed: node.gradientComputed,
+        valueComputed: node.valueComputed,
         x: node.x,
         y: node.y,
         isActive: executionState.activeNodes.has(node.id),
@@ -83,9 +87,10 @@ export default function ComputationGraphVisualizer({
           const isActive = executionState.activeNodes.has(input.id) &&
                           executionState.activeNodes.has(node.id);
 
+          // Reverse arrow direction during backward pass
           edges.push({
-            source: sourceNode,
-            target: targetNode,
+            source: executionState.mode === 'backward' ? targetNode : sourceNode,
+            target: executionState.mode === 'backward' ? sourceNode : targetNode,
             isActive,
           });
         }
@@ -224,8 +229,8 @@ export default function ComputationGraphVisualizer({
       .attr('class', 'fill-white text-xs font-semibold')
       .text(d => d.name);
 
-    // Value badge above node (always show if value exists)
-    nodeCircles.filter(d => d.value !== undefined)
+    // Value badge above node (only show if value has been computed)
+    nodeCircles.filter(d => d.valueComputed)
       .append('rect')
       .attr('x', -25)
       .attr('y', -38)
@@ -235,7 +240,7 @@ export default function ComputationGraphVisualizer({
       .attr('fill', '#2563eb')
       .attr('opacity', 0.95);
 
-    nodeCircles.filter(d => d.value !== undefined)
+    nodeCircles.filter(d => d.valueComputed)
       .append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', -27)
@@ -243,7 +248,7 @@ export default function ComputationGraphVisualizer({
       .text(d => `v=${d.value.toFixed(2)}`);
 
     // Gradient badge above value (during backward pass)
-    nodeCircles.filter(d => executionState.mode === 'backward' && d.gradient !== 0)
+    nodeCircles.filter(d => executionState.mode === 'backward' && d.gradientComputed)
       .append('rect')
       .attr('x', -30)
       .attr('y', -56)
@@ -253,7 +258,7 @@ export default function ComputationGraphVisualizer({
       .attr('fill', '#ea580c')
       .attr('opacity', 0.95);
 
-    nodeCircles.filter(d => executionState.mode === 'backward' && d.gradient !== 0)
+    nodeCircles.filter(d => executionState.mode === 'backward' && d.gradientComputed)
       .append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', -45)

@@ -336,8 +336,8 @@ export function createQ5Example(): Example {
 
   return {
     id: 'q5-exam',
-    name: 'Q5: f(x,y,z,w) = 2(xy + max(z,w))',
-    description: 'Exam Question 5: Complex expression with max operation. Watch how gradients flow through multiple paths and the max gate.',
+    name: 'Practice: f(x,y,z,w) = 2(xy + max(z,w))',
+    description: 'Practice problem: Complex expression with max gate. Can you predict the gradients before stepping through?',
     graph,
     defaultInputs: { x: 3.0, y: -4.0, z: 2.0, w: -1.0 },
   };

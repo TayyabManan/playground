@@ -20,11 +20,8 @@ export default function BackpropVisualizer() {
   const [executionState, setExecutionState] = useState(engine.getState());
   const [playbackSpeed, setPlaybackSpeed] = useState(1000);
 
-  // Initialize with forward pass executed
-  useEffect(() => {
-    engine.executeForward();
-    setExecutionState(engine.getState());
-  }, []);
+  // Start in idle state - user steps through forward pass first
+  // No automatic execution on initialization
 
   // Handle example change
   const handleExampleChange = (exampleId: string) => {
@@ -33,7 +30,6 @@ export default function BackpropVisualizer() {
 
     setCurrentExample(example);
     const newEngine = new ExecutionEngine(example.graph);
-    newEngine.executeForward();
     setEngine(newEngine);
     setExecutionState(newEngine.getState());
   };
@@ -44,7 +40,6 @@ export default function BackpropVisualizer() {
     if (node && (node instanceof InputNode || node instanceof ParameterNode)) {
       node.setValue(value);
       engine.reset();
-      engine.executeForward();
       setExecutionState(engine.getState());
     }
   };
@@ -64,7 +59,6 @@ export default function BackpropVisualizer() {
 
   const handleReset = useCallback(() => {
     engine.reset();
-    engine.executeForward();
     setExecutionState(engine.getState());
   }, [engine]);
 
@@ -178,7 +172,7 @@ export default function BackpropVisualizer() {
                 <div className="font-semibold text-gray-900 dark:text-[#f8fafc] mb-1">
                   {example.name}
                 </div>
-                <div className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                <div className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3">
                   {example.description}
                 </div>
               </button>

@@ -49,6 +49,8 @@ export abstract class ComputationNode {
   x: number = 0;
   y: number = 0;
   isActive: boolean = false;
+  gradientComputed: boolean = false;
+  valueComputed: boolean = false;
 
   constructor(id: string, type: NodeType, name: string) {
     this.id = id;
@@ -58,6 +60,7 @@ export abstract class ComputationNode {
 
   abstract forward(): number;
   abstract backward(upstreamGradient: number): void;
+  abstract backwardLocal(upstreamGradient: number): { [inputId: string]: number };
   abstract getForwardEquation(): string;
   abstract getBackwardEquation(): string;
   abstract getExplanation(): string;
@@ -70,14 +73,22 @@ export class InputNode extends ComputationNode {
   constructor(id: string, name: string, value: number = 0) {
     super(id, 'input', name);
     this.value = value;
+    this.valueComputed = true; // Input nodes have values from the start
   }
 
   forward(): number {
+    this.valueComputed = true;
     return this.value;
   }
 
   backward(upstreamGradient: number): void {
     this.gradient = upstreamGradient;
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+    return {}; // No inputs to propagate to
   }
 
   getForwardEquation(): string {
@@ -104,14 +115,22 @@ export class ParameterNode extends ComputationNode {
   constructor(id: string, name: string, value: number = 0) {
     super(id, 'parameter', name);
     this.value = value;
+    this.valueComputed = true; // Parameter nodes have values from the start
   }
 
   forward(): number {
+    this.valueComputed = true;
     return this.value;
   }
 
   backward(upstreamGradient: number): void {
     this.gradient = upstreamGradient;
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+    return {}; // No inputs to propagate to
   }
 
   getForwardEquation(): string {
@@ -147,6 +166,7 @@ export class MultiplyNode extends ComputationNode {
 
   forward(): number {
     this.value = this.inputs[0].value * this.inputs[1].value;
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -160,6 +180,21 @@ export class MultiplyNode extends ComputationNode {
 
     this.inputs[0].backward(gradInput1);
     this.inputs[1].backward(gradInput2);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // ∂L/∂x = y * ∂L/∂z
+    const gradInput1 = this.inputs[1].value * upstreamGradient;
+    // ∂L/∂y = x * ∂L/∂z
+    const gradInput2 = this.inputs[0].value * upstreamGradient;
+
+    return {
+      [this.inputs[0].id]: gradInput1,
+      [this.inputs[1].id]: gradInput2,
+    };
   }
 
   getForwardEquation(): string {
@@ -189,6 +224,7 @@ export class AddNode extends ComputationNode {
 
   forward(): number {
     this.value = this.inputs[0].value + this.inputs[1].value;
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -198,6 +234,17 @@ export class AddNode extends ComputationNode {
     // Addition distributes gradient equally
     this.inputs[0].backward(upstreamGradient);
     this.inputs[1].backward(upstreamGradient);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // Addition distributes gradient equally
+    return {
+      [this.inputs[0].id]: upstreamGradient,
+      [this.inputs[1].id]: upstreamGradient,
+    };
   }
 
   getForwardEquation(): string {
@@ -227,6 +274,7 @@ export class SigmoidNode extends ComputationNode {
 
   forward(): number {
     this.value = 1 / (1 + Math.exp(-this.inputs[0].value));
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -237,6 +285,18 @@ export class SigmoidNode extends ComputationNode {
     const localGrad = this.value * (1 - this.value);
 
     this.inputs[0].backward(localGrad * upstreamGradient);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // Local gradient: σ'(x) = σ(x) * (1 - σ(x))
+    const localGrad = this.value * (1 - this.value);
+
+    return {
+      [this.inputs[0].id]: localGrad * upstreamGradient,
+    };
   }
 
   getForwardEquation(): string {
@@ -267,6 +327,7 @@ export class ReLUNode extends ComputationNode {
 
   forward(): number {
     this.value = Math.max(0, this.inputs[0].value);
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -277,6 +338,18 @@ export class ReLUNode extends ComputationNode {
     const localGrad = this.inputs[0].value > 0 ? 1 : 0;
 
     this.inputs[0].backward(localGrad * upstreamGradient);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // Local gradient: 1 if x > 0, else 0
+    const localGrad = this.inputs[0].value > 0 ? 1 : 0;
+
+    return {
+      [this.inputs[0].id]: localGrad * upstreamGradient,
+    };
   }
 
   getForwardEquation(): string {
@@ -307,6 +380,7 @@ export class SquareNode extends ComputationNode {
 
   forward(): number {
     this.value = this.inputs[0].value ** 2;
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -317,6 +391,18 @@ export class SquareNode extends ComputationNode {
     const localGrad = 2 * this.inputs[0].value;
 
     this.inputs[0].backward(localGrad * upstreamGradient);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // Local gradient: 2x
+    const localGrad = 2 * this.inputs[0].value;
+
+    return {
+      [this.inputs[0].id]: localGrad * upstreamGradient,
+    };
   }
 
   getForwardEquation(): string {
@@ -347,6 +433,7 @@ export class SubtractNode extends ComputationNode {
 
   forward(): number {
     this.value = this.inputs[0].value - this.inputs[1].value;
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -357,6 +444,16 @@ export class SubtractNode extends ComputationNode {
     this.inputs[0].backward(upstreamGradient);
     // Negated gradient to second input
     this.inputs[1].backward(-upstreamGradient);
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    return {
+      [this.inputs[0].id]: upstreamGradient,
+      [this.inputs[1].id]: -upstreamGradient,
+    };
   }
 
   getForwardEquation(): string {
@@ -400,6 +497,7 @@ export class MaxNode extends ComputationNode {
       this.value = val2;
     }
 
+    this.valueComputed = true;
     return this.value;
   }
 
@@ -413,6 +511,24 @@ export class MaxNode extends ComputationNode {
     } else {
       this.inputs[0].backward(0);
       this.inputs[1].backward(upstreamGradient);
+    }
+  }
+
+  backwardLocal(upstreamGradient: number): { [inputId: string]: number } {
+    this.gradient = upstreamGradient;
+    this.gradientComputed = true;
+
+    // Gradient flows only to the input that was maximum
+    if (this.maxIndex === 0) {
+      return {
+        [this.inputs[0].id]: upstreamGradient,
+        [this.inputs[1].id]: 0,
+      };
+    } else {
+      return {
+        [this.inputs[0].id]: 0,
+        [this.inputs[1].id]: upstreamGradient,
+      };
     }
   }
 
@@ -511,6 +627,11 @@ export class ComputationGraph {
     for (const node of this.nodes.values()) {
       node.gradient = 0;
       node.isActive = false;
+      node.gradientComputed = false;
+      // Keep valueComputed true for input and parameter nodes
+      if (node.type !== 'input' && node.type !== 'parameter') {
+        node.valueComputed = false;
+      }
     }
   }
 }
