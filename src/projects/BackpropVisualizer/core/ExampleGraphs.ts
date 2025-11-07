@@ -293,7 +293,7 @@ export function createQ5Example(): Example {
   const xy = new MultiplyNode('xy', 'x×y', x, y);
   const maxzw = new MaxNode('maxzw', 'max(z,w)', z, w);
   const sum = new AddNode('sum', 'xy+max', xy, maxzw);
-  const result = new MultiplyNode('result', 'f', two, sum);
+  const result = new MultiplyNode('result', 'f', sum, two);
 
   // Build graph
   graph.addNode(x);
